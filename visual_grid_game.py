@@ -77,6 +77,19 @@ class VisualGridHuntGame:
             elif self.facing == 'Right':
                 self.facing = 'Up'
 
+        elif action == 'TurnRight':
+            if self.facing == 'Up':
+                self.facing = 'Right'
+
+            elif self.facing == 'Right':
+                self.facing = 'Down'
+
+            elif self.facing == 'Down':
+                self.facing = 'Left'
+
+            elif self.facing == 'Left':
+                self.facing = 'Up'
+
         elif action == 'Forward':
             new_pos = list(self.agent_pos)
 
@@ -133,7 +146,46 @@ class SimpleReflexAgent:
         else:
             return 'Forward'
 
+class ModelBasedAgent:
 
+    def __init__(self):
+        # Internal memory of the agent
+        self.memory = []
+        self.last_action = None
+        self.turn_count = 0
+
+    def sense_and_act(self, percept):
+
+        # Update the internal memory with the current percept
+        self.memory.append({
+            "percept": percept.copy(),
+            "last_action": self.last_action
+        })
+
+        # Condition-Action rules using memory
+        if percept['food_here']:
+            action = 'Eat'
+            self.turn_count = 0
+
+        elif percept['wall_ahead']:
+
+            # Use memory to avoid getting stuck in a loop
+            if self.turn_count >= 2:
+                action = 'TurnRight'
+                self.turn_count = 0
+            else:
+                action = 'TurnLeft'
+                self.turn_count += 1
+
+        else:
+            action = 'Forward'
+            self.turn_count = 0
+
+        # Remember the last action
+        self.last_action = action
+
+        return action
+    
 class GridGameGUI:
     """Tkinter wrapper that dynamically scales cell sizes to keep larger grids on screen."""
 
@@ -148,7 +200,7 @@ class GridGameGUI:
             num_opponents=num_opponents,
             custom_walls=walls)
 
-        self.agent = SimpleReflexAgent()
+        self.agent = ModelBasedAgent()
 
         # Dynamically calculate cell size so the total canvas fits nicely within a 600x600 window ceiling
         max_canvas_dim = 600
@@ -217,7 +269,7 @@ class GridGameGUI:
                 #Get local percept
                 percept = self.env.get_percept()
 
-                #Simple reflex agent decides action based on percept
+                # Model-Based Agent decides action using the current percept and memory
                 action = self.agent.sense_and_act(percept)
 
                 # Execute the action in the environment
