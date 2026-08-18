@@ -18,28 +18,9 @@ class GreedyGridAgent:
 class SearchAgent:
     """Agent that supports BFS, DFS, and UCS search."""
 
-    def __init__(self, strategy='BFS'):
-        self.strategy = strategy.upper()
-
-    def bfs_search(self, start, goal, percept):
-        frontier = deque([(start, [])])
-        reached = {start}
-
-        while frontier:
-            current, path = frontier.popleft()
-
-            if current == goal:
-                return path
-
-            for next_state, action in self.get_neighbors(current, percept):
-
-                if next_state not in reached:
-                    reached.add(next_state)
-                    frontier.append(
-                        (next_state, path + [action])
-                    )
-
-        return []
+    def __init__(self):
+        self.plan = []
+        self.active_algo = 'BFS'
 
     def bfs_search(self, start, goal, percept):
         """Breadth-First Search using a FIFO queue."""
@@ -96,8 +77,6 @@ class SearchAgent:
         while frontier:
             cost, current, path = heapq.heappop(frontier)
 
-            # Skip this state if we have already reached it
-            # with an equal or lower cost.
             if current in reached and reached[current] <= cost:
                 continue
 
@@ -158,3 +137,51 @@ class SearchAgent:
                 )
 
         return neighbors
+
+    def sense_and_act(self, percept):
+        # If there is no current plan, create a new one
+        if not self.plan:
+
+            current_position = tuple(percept['agent_pos'])
+            all_food = percept['all_food']
+
+            # If there is no food remaining, do nothing
+            if not all_food:
+                return 'Up'
+
+            # Find the closest food pellet using Manhattan distance
+            target = min(
+                all_food,
+                key=lambda food:
+                    abs(food[0] - current_position[0]) +
+                    abs(food[1] - current_position[1])
+            )
+
+            # Select the search algorithm
+            if self.active_algo == 'BFS':
+                self.plan = self.bfs_search(
+                    current_position,
+                    tuple(target),
+                    percept
+                )
+
+            elif self.active_algo == 'DFS':
+                self.plan = self.dfs_search(
+                    current_position,
+                    tuple(target),
+                    percept
+                )
+
+            elif self.active_algo == 'UCS':
+                self.plan = self.ucs_search(
+                    current_position,
+                    tuple(target),
+                    percept
+                )
+
+        # Execute the first action in the plan
+        if self.plan:
+            return self.plan.pop(0)
+
+        # Fallback if no path exists
+        return 'Up'
