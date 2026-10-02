@@ -1,8 +1,11 @@
 # agent.py
+
 import random
 import math
 from collections import deque
 import heapq
+
+from logic_engine import KnowledgeBase
 
 
 class GreedyGridAgent:
@@ -14,6 +17,7 @@ class GreedyGridAgent:
     def sense_and_act(self, percept: dict) -> str:
         # If standing directly on food, or just wander / move towards coordinates
         pos = percept['agent_pos']
+
         # Simple heuristic or fallback random sweep
         return random.choice(self.actions_pool)
 
@@ -24,6 +28,23 @@ class SearchAgent:
     def __init__(self):
         self.plan = []
         self.active_algo = 'BFS'
+
+        # Lab 05: Knowledge Base
+        self.kb = KnowledgeBase()
+
+        # Rule 1:
+        # TargetVisible AND HasDust -> SafeToEngage
+        self.kb.tell_rule(
+            ['TargetVisible', 'HasDust'],
+            'SafeToEngage'
+        )
+
+        # Rule 2:
+        # SafeToEngage AND BloodseekerMissing -> Retreat
+        self.kb.tell_rule(
+            ['SafeToEngage', 'BloodseekerMissing'],
+            'Retreat'
+        )
 
     def manhattan_distance(self, pos, goal):
         """Calculate Manhattan distance between two positions."""
@@ -49,17 +70,25 @@ class SearchAgent:
         reached = {start}
 
         while frontier:
+
             current, path = frontier.popleft()
 
             if current == goal:
                 return path
 
-            for next_state, action in self.get_neighbors(current, percept):
+            for next_state, action in self.get_neighbors(
+                current,
+                percept
+            ):
                 if next_state not in reached:
+
                     reached.add(next_state)
 
                     frontier.append(
-                        (next_state, path + [action])
+                        (
+                            next_state,
+                            path + [action]
+                        )
                     )
 
         return []
@@ -71,17 +100,25 @@ class SearchAgent:
         reached = {start}
 
         while frontier:
+
             current, path = frontier.pop()
 
             if current == goal:
                 return path
 
-            for next_state, action in self.get_neighbors(current, percept):
+            for next_state, action in self.get_neighbors(
+                current,
+                percept
+            ):
                 if next_state not in reached:
+
                     reached.add(next_state)
 
                     frontier.append(
-                        (next_state, path + [action])
+                        (
+                            next_state,
+                            path + [action]
+                        )
                     )
 
         return []
@@ -93,6 +130,7 @@ class SearchAgent:
         reached = {}
 
         while frontier:
+
             cost, current, path = heapq.heappop(frontier)
 
             if current in reached and reached[current] <= cost:
@@ -103,9 +141,10 @@ class SearchAgent:
             if current == goal:
                 return path
 
-            for next_state, action in self.get_neighbors(current, percept):
-
-                # Each movement currently has a cost of 1.
+            for next_state, action in self.get_neighbors(
+                current,
+                percept
+            ):
                 new_cost = cost + 1
 
                 if (
@@ -123,43 +162,81 @@ class SearchAgent:
 
         return []
 
-    # Lab 04: A* Search using g(n) + h(n).
+    # Lab 05: Knowledge Base feasibility check
+    def check_tile_feasibility(self, tile_facts):
+        """
+        Check whether a candidate tile is logically feasible
+        using the Knowledge Base.
+        """
+
+        # Clear facts from the previous candidate tile
+        self.kb.clear_facts()
+
+        # Add the facts associated with this tile
+        for fact in tile_facts:
+            self.kb.tell_fact(fact)
+
+        # Apply forward chaining
+        self.kb.forward_chain()
+
+        # If Retreat is derived, reject this tile
+        return 'Retreat' not in self.kb.facts
+
+    # Lab 04 + Lab 05: A* Search
     def astar_search(
         self,
         start_pos,
         goal_pos,
         walls,
         grid_size,
-        heuristic_type='manhattan'
+        heuristic_type='manhattan',
+        tile_facts=None
     ):
-        """A* Search using g(n) + h(n)."""
+        """
+        A* Search using f(n) = g(n) + h(n).
 
-        # Lab 04: Create the priority queue and reached-state set.
+        Lab 05 adds a Knowledge Base feasibility check
+        before a candidate tile is added to the frontier.
+        """
+
         frontier = []
         reached_states = set()
 
-        # Lab 04: Calculate the initial heuristic value.
+        # Calculate initial heuristic
         if heuristic_type == 'euclidean':
-            h_cost = self.euclidean_distance(start_pos, goal_pos)
+            h_cost = self.euclidean_distance(
+                start_pos,
+                goal_pos
+            )
         else:
-            h_cost = self.manhattan_distance(start_pos, goal_pos)
+            h_cost = self.manhattan_distance(
+                start_pos,
+                goal_pos
+            )
 
-        # Lab 04: The initial node has g(n) = 0 and f(n) = g(n) + h(n).
+        # Initial node:
+        # (f_cost, g_cost, position, path)
         heapq.heappush(
             frontier,
-            (h_cost, 0, start_pos, [])
+            (
+                h_cost,
+                0,
+                start_pos,
+                []
+            )
         )
 
         while frontier:
 
-            # Lab 04: Select the node with the lowest f(n) value.
-            f_cost, g_cost, current_pos, path_taken = heapq.heappop(frontier)
+            f_cost, g_cost, current_pos, path_taken = (
+                heapq.heappop(frontier)
+            )
 
-            # Lab 04: Return the path when the goal is reached.
+            # Goal reached
             if current_pos == goal_pos:
                 return path_taken
 
-            # Lab 04: Skip states that have already been processed.
+            # Skip already expanded states
             if current_pos in reached_states:
                 continue
 
@@ -167,7 +244,6 @@ class SearchAgent:
 
             x, y = current_pos
 
-            # Lab 04: A* checks the four possible movement directions.
             moves = {
                 'Up': (x, y + 1),
                 'Down': (x, y - 1),
@@ -179,25 +255,38 @@ class SearchAgent:
 
                 nx, ny = next_pos
 
-                # Lab 04: Ignore positions outside the grid.
+                # Check grid boundaries
                 if not (
                     0 <= nx < grid_size[0]
                     and 0 <= ny < grid_size[1]
                 ):
                     continue
 
-                # Lab 04: Ignore positions containing walls.
+                # Check walls
                 if next_pos in walls:
                     continue
 
-                # Lab 04: Ignore states that have already been reached.
+                # Check already expanded states
                 if next_pos in reached_states:
                     continue
 
-                # Lab 04: Every movement has a cost of 1.
+                # Lab 05:
+                # Check logical feasibility using Knowledge Base
+                if tile_facts is not None:
+
+                    facts_for_tile = tile_facts.get(
+                        next_pos,
+                        []
+                    )
+
+                    if not self.check_tile_feasibility(
+                        facts_for_tile
+                    ):
+                        continue
+
+                # Existing Lab 04 A* logic
                 new_g_cost = g_cost + 1
 
-                # Lab 04: Calculate h(n) using the selected heuristic.
                 if heuristic_type == 'euclidean':
                     new_h_cost = self.euclidean_distance(
                         next_pos,
@@ -209,10 +298,8 @@ class SearchAgent:
                         goal_pos
                     )
 
-                # Lab 04: Calculate f(n) = g(n) + h(n).
                 new_f_cost = new_g_cost + new_h_cost
 
-                # Lab 04: Add the new node to the A* priority queue.
                 heapq.heappush(
                     frontier,
                     (
@@ -238,6 +325,7 @@ class SearchAgent:
         }
 
         walls = set(percept['walls'])
+
         width, height = percept['grid_size']
 
         neighbors = []
@@ -246,45 +334,51 @@ class SearchAgent:
 
             nx, ny = next_state
 
-            # Check grid boundaries and walls
             if (
                 0 <= nx < width
                 and 0 <= ny < height
                 and next_state not in walls
             ):
                 neighbors.append(
-                    (next_state, action)
+                    (
+                        next_state,
+                        action
+                    )
                 )
 
         return neighbors
 
     def sense_and_act(self, percept):
 
-        # If there is no current plan, create a new one
         if not self.plan:
 
-            current_position = tuple(percept['agent_pos'])
+            current_position = tuple(
+                percept['agent_pos']
+            )
+
             all_food = percept['all_food']
 
-            # If there is no food remaining, do nothing
             if not all_food:
                 return 'Up'
 
-            # Lab 04 integration:
-            # If the agent is already standing on food, eat it.
-            if current_position in all_food:
-                return 'Eat'
-
-            # Find the closest food pellet using Manhattan distance
+            # Find the closest food using Manhattan distance
             target = min(
                 all_food,
                 key=lambda food:
-                    abs(food[0] - current_position[0]) +
-                    abs(food[1] - current_position[1])
+                    abs(
+                        food[0] -
+                        current_position[0]
+                    )
+                    +
+                    abs(
+                        food[1] -
+                        current_position[1]
+                    )
             )
 
-            # Select the search algorithm
+            # Existing Lab 02 / Lab 03 / Lab 04 algorithms
             if self.active_algo == 'BFS':
+
                 self.plan = self.bfs_search(
                     current_position,
                     tuple(target),
@@ -292,6 +386,7 @@ class SearchAgent:
                 )
 
             elif self.active_algo == 'DFS':
+
                 self.plan = self.dfs_search(
                     current_position,
                     tuple(target),
@@ -299,25 +394,29 @@ class SearchAgent:
                 )
 
             elif self.active_algo == 'UCS':
+
                 self.plan = self.ucs_search(
                     current_position,
                     tuple(target),
                     percept
                 )
 
-            # Lab 04: Use A* search when AStar is selected.
+            # Lab 04 + Lab 05
             elif self.active_algo == 'AStar':
+
                 self.plan = self.astar_search(
                     current_position,
                     tuple(target),
                     percept['walls'],
                     percept['grid_size'],
-                    heuristic_type='manhattan'
+                    heuristic_type='manhattan',
+                    tile_facts=percept.get(
+                        'tile_facts'
+                    )
                 )
 
-        # Execute the first action in the plan
         if self.plan:
+
             return self.plan.pop(0)
 
-        # Fallback if no path exists
         return 'Up'
